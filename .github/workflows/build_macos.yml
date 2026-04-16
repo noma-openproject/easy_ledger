@@ -1,0 +1,45 @@
+---
+name: Build macOS
+
+"on":
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.6"
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build macOS release
+        run: flutter build macos --release
+
+      - name: Prepare artifact
+        run: |
+          cp -R "build/macos/Build/Products/Release/easy_ledger.app" \
+            "build/macos/Build/Products/Release/쉬운장부.app"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "build/macos/Build/Products/Release/쉬운장부.app" \
+            "build/macos/Build/Products/Release/쉬운장부-macos.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: easy-ledger-macos
+          path: build/macos/Build/Products/Release/쉬운장부-macos.zip

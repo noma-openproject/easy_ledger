@@ -1,0 +1,16 @@
+// Application-level settings for the Runner target.
+//
+// This may be replaced with something auto-generated from metadata (e.g., pubspec.yaml) in the
+// future. If not, the values below would default to using the project name when this becomes a
+// 'flutter create' template.
+
+// Keep the bundle/executable name ASCII for macOS codesign stability while
+// exposing the localized app name via Info.plist display-name keys.
+PRODUCT_NAME = easy_ledger
+EXECUTABLE_NAME = easy_ledger
+
+// The application's bundle identifier
+PRODUCT_BUNDLE_IDENTIFIER = com.noma.easy.easyLedger
+
+// The copyright displayed in application information
+PRODUCT_COPYRIGHT = Copyright © 2026 com.noma.easy. All rights reserved.
