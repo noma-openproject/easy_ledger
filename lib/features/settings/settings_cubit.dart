@@ -1,147 +1,26 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/export/backup_service.dart';
-import '../../core/export/simple_ledger_exporter.dart';
 import '../../core/oauth/codex_oauth.dart';
 import '../../core/sheets/google_auth_service.dart';
-import '../../core/sheets/sheets_service.dart';
 import '../../core/sheets/sync_queue.dart';
 import '../../core/storage/hive_storage.dart';
 import '../../core/storage/secure_storage.dart';
-
-enum CodexStatus { loggedOut, loggingIn, loggedIn }
-
-enum GoogleStatus { signedOut, signingIn, signedIn }
-
-class SettingsState {
-  final CodexStatus codexStatus;
-  final String? accountIdShort;
-  final bool geminiKeySaved;
-  final bool autoSaveEnabled;
-  final bool autoSyncEnabled;
-  final int monthStartDay;
-  final String defaultExpenseType;
-  final int transactionCount;
-  final int receiptCount;
-  final int itemCount;
-  final int syncPendingCount;
-  final GoogleStatus googleStatus;
-  final String? googleEmail;
-  final String? sheetId;
-  final bool testingSheet;
-  final bool exportingLedger;
-  final bool backupBusy;
-  final String? sheetTestMessage;
-  final String? errorText;
-
-  const SettingsState({
-    required this.codexStatus,
-    this.accountIdShort,
-    required this.geminiKeySaved,
-    required this.autoSaveEnabled,
-    required this.autoSyncEnabled,
-    required this.monthStartDay,
-    required this.defaultExpenseType,
-    required this.transactionCount,
-    required this.receiptCount,
-    required this.itemCount,
-    required this.syncPendingCount,
-    required this.googleStatus,
-    this.googleEmail,
-    this.sheetId,
-    required this.testingSheet,
-    required this.exportingLedger,
-    required this.backupBusy,
-    this.sheetTestMessage,
-    this.errorText,
-  });
-
-  factory SettingsState.initial() => const SettingsState(
-    codexStatus: CodexStatus.loggedOut,
-    geminiKeySaved: false,
-    autoSaveEnabled: false,
-    autoSyncEnabled: true,
-    monthStartDay: 1,
-    defaultExpenseType: 'personal',
-    transactionCount: 0,
-    receiptCount: 0,
-    itemCount: 0,
-    syncPendingCount: 0,
-    googleStatus: GoogleStatus.signedOut,
-    testingSheet: false,
-    exportingLedger: false,
-    backupBusy: false,
-  );
-
-  SettingsState copyWith({
-    CodexStatus? codexStatus,
-    Object? accountIdShort = _sentinel,
-    bool? geminiKeySaved,
-    bool? autoSaveEnabled,
-    bool? autoSyncEnabled,
-    int? monthStartDay,
-    String? defaultExpenseType,
-    int? transactionCount,
-    int? receiptCount,
-    int? itemCount,
-    int? syncPendingCount,
-    GoogleStatus? googleStatus,
-    Object? googleEmail = _sentinel,
-    Object? sheetId = _sentinel,
-    bool? testingSheet,
-    bool? exportingLedger,
-    bool? backupBusy,
-    Object? sheetTestMessage = _sentinel,
-    Object? errorText = _sentinel,
-  }) {
-    return SettingsState(
-      codexStatus: codexStatus ?? this.codexStatus,
-      accountIdShort: identical(accountIdShort, _sentinel)
-          ? this.accountIdShort
-          : accountIdShort as String?,
-      geminiKeySaved: geminiKeySaved ?? this.geminiKeySaved,
-      autoSaveEnabled: autoSaveEnabled ?? this.autoSaveEnabled,
-      autoSyncEnabled: autoSyncEnabled ?? this.autoSyncEnabled,
-      monthStartDay: monthStartDay ?? this.monthStartDay,
-      defaultExpenseType: defaultExpenseType ?? this.defaultExpenseType,
-      transactionCount: transactionCount ?? this.transactionCount,
-      receiptCount: receiptCount ?? this.receiptCount,
-      itemCount: itemCount ?? this.itemCount,
-      syncPendingCount: syncPendingCount ?? this.syncPendingCount,
-      googleStatus: googleStatus ?? this.googleStatus,
-      googleEmail: identical(googleEmail, _sentinel)
-          ? this.googleEmail
-          : googleEmail as String?,
-      sheetId: identical(sheetId, _sentinel)
-          ? this.sheetId
-          : sheetId as String?,
-      testingSheet: testingSheet ?? this.testingSheet,
-      exportingLedger: exportingLedger ?? this.exportingLedger,
-      backupBusy: backupBusy ?? this.backupBusy,
-      sheetTestMessage: identical(sheetTestMessage, _sentinel)
-          ? this.sheetTestMessage
-          : sheetTestMessage as String?,
-      errorText: identical(errorText, _sentinel)
-          ? this.errorText
-          : errorText as String?,
-    );
-  }
-}
-
-const Object _sentinel = Object();
+import 'settings_account_service.dart';
+import 'settings_data_service.dart';
+import 'settings_state.dart';
+import 'settings_sync_service.dart';
 
 /// 설정 탭 cubit — OAuth 로그인 + Gemini API Key 관리.
 /// Phase 0 의 phase0_cubit 의 OAuth/Gemini 부분만 발췌 (영수증 추출 제외).
 class SettingsCubit extends Cubit<SettingsState> {
   final SecureStorage _storage;
-  final CodexOAuth _oauth;
   final HiveStorage _hive;
   final GoogleAuthService _googleAuth;
-  final SyncQueue _syncQueue;
+  final SettingsAccountService _accountService;
+  final SettingsSyncService _syncService;
+  final SettingsDataService _dataService;
 
   SettingsCubit({
     required SecureStorage storage,
@@ -150,10 +29,15 @@ class SettingsCubit extends Cubit<SettingsState> {
     required GoogleAuthService googleAuth,
     required SyncQueue syncQueue,
   }) : _storage = storage,
-       _oauth = oauth,
        _hive = hive,
        _googleAuth = googleAuth,
-       _syncQueue = syncQueue,
+       _accountService = SettingsAccountService(storage: storage, oauth: oauth),
+       _syncService = SettingsSyncService(
+         hive: hive,
+         googleAuth: googleAuth,
+         syncQueue: syncQueue,
+       ),
+       _dataService = SettingsDataService(hive),
        super(SettingsState.initial());
 
   Future<void> init() async {
@@ -169,7 +53,9 @@ class SettingsCubit extends Cubit<SettingsState> {
         codexStatus: tokens != null
             ? CodexStatus.loggedIn
             : CodexStatus.loggedOut,
-        accountIdShort: tokens != null ? _short(tokens.accountId) : null,
+        accountIdShort: tokens != null
+            ? SettingsAccountService.shortAccountId(tokens.accountId)
+            : null,
         geminiKeySaved: geminiKey != null && geminiKey.isNotEmpty,
         autoSaveEnabled: _hive.autoSaveEnabled,
         autoSyncEnabled: _hive.autoSyncEnabled,
@@ -178,7 +64,7 @@ class SettingsCubit extends Cubit<SettingsState> {
         transactionCount: _hive.transactionCount,
         receiptCount: _hive.receiptCount,
         itemCount: _hive.itemCount,
-        syncPendingCount: _syncQueue.pendingCount,
+        syncPendingCount: _hive.syncItemsBox.length,
         googleStatus: _googleAuth.isSignedIn
             ? GoogleStatus.signedIn
             : GoogleStatus.signedOut,
@@ -193,19 +79,11 @@ class SettingsCubit extends Cubit<SettingsState> {
     debugPrint('[Settings] loginCodex: START');
     emit(state.copyWith(codexStatus: CodexStatus.loggingIn, errorText: null));
     try {
-      final tokens = await _oauth.login(
-        onOpenBrowser: (uri) async {
-          final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-          if (!ok) {
-            throw StateError('외부 브라우저를 열 수 없습니다. URL: $uri');
-          }
-        },
-      );
-      await _storage.writeCodexTokens(tokens);
+      final accountIdShort = await _accountService.loginCodex();
       emit(
         state.copyWith(
           codexStatus: CodexStatus.loggedIn,
-          accountIdShort: _short(tokens.accountId),
+          accountIdShort: accountIdShort,
           errorText: null,
         ),
       );
@@ -222,25 +100,19 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   Future<void> logoutCodex() async {
-    await _storage.clearCodexTokens();
+    await _accountService.logoutCodex();
     emit(
       state.copyWith(codexStatus: CodexStatus.loggedOut, accountIdShort: null),
     );
   }
 
   Future<void> debugExpireCodexToken() async {
-    await _storage.debugExpireCodexToken();
+    await _accountService.debugExpireCodexToken();
   }
 
   Future<void> saveGeminiKey(String apiKey) async {
-    final trimmed = apiKey.trim();
-    if (trimmed.isEmpty) {
-      await _storage.clearGeminiKey();
-      emit(state.copyWith(geminiKeySaved: false));
-      return;
-    }
-    await _storage.writeGeminiKey(trimmed);
-    emit(state.copyWith(geminiKeySaved: true));
+    final saved = await _accountService.saveGeminiKey(apiKey);
+    emit(state.copyWith(geminiKeySaved: saved));
   }
 
   Future<void> setAutoSaveEnabled(bool value) async {
@@ -273,13 +145,11 @@ class SettingsCubit extends Cubit<SettingsState> {
       ),
     );
     try {
-      final client = await _googleAuth.signIn();
+      final status = await _syncService.loginGoogle();
       emit(
         state.copyWith(
-          googleStatus: client == null
-              ? GoogleStatus.signedOut
-              : GoogleStatus.signedIn,
-          googleEmail: _googleAuth.userEmail,
+          googleStatus: status,
+          googleEmail: _syncService.googleEmail,
           errorText: null,
         ),
       );
@@ -295,8 +165,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   Future<void> logoutGoogle() async {
-    await _googleAuth.signOut();
-    await _hive.setSheetId(null);
+    await _syncService.logoutGoogle();
     emit(
       state.copyWith(
         googleStatus: GoogleStatus.signedOut,
@@ -308,43 +177,21 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   Future<void> saveSheetId(String input) async {
-    final id = _extractSheetId(input);
-    await _hive.setSheetId(id);
+    final id = await _syncService.saveSheetId(input);
     emit(state.copyWith(sheetId: id, sheetTestMessage: null));
   }
 
   Future<void> testSheetConnection(String input) async {
-    final id = _extractSheetId(input);
-    if (id == null) {
-      emit(state.copyWith(sheetTestMessage: '시트 ID를 입력하세요.'));
-      return;
-    }
-    await _hive.setSheetId(id);
-    emit(
-      state.copyWith(testingSheet: true, sheetId: id, sheetTestMessage: null),
-    );
+    emit(state.copyWith(testingSheet: true, sheetTestMessage: null));
     try {
-      final client =
-          await _googleAuth.currentAuthClient() ?? await _googleAuth.signIn();
-      if (client == null) {
-        emit(
-          state.copyWith(
-            testingSheet: false,
-            googleStatus: GoogleStatus.signedOut,
-            sheetTestMessage: 'Google 로그인이 취소되었습니다.',
-          ),
-        );
-        return;
-      }
-      await SheetsService(client).ensureHeader(id);
-      await _syncQueue.processNow();
+      final result = await _syncService.testSheetConnection(input);
       emit(
         state.copyWith(
           testingSheet: false,
-          googleStatus: GoogleStatus.signedIn,
-          googleEmail: _googleAuth.userEmail,
-          syncPendingCount: _syncQueue.pendingCount,
-          sheetTestMessage: '연결 성공: 첫 번째 시트 헤더를 확인했습니다.',
+          googleStatus: result.googleStatus,
+          googleEmail: result.googleEmail,
+          sheetId: result.sheetId,
+          sheetTestMessage: result.message,
           errorText: null,
         ),
       );
@@ -367,19 +214,19 @@ class SettingsCubit extends Cubit<SettingsState> {
     }
     emit(state.copyWith(testingSheet: true, sheetTestMessage: null));
     try {
-      await _syncQueue.processNow();
+      final pendingCount = await _syncService.processSyncQueueNow();
       emit(
         state.copyWith(
           testingSheet: false,
-          syncPendingCount: _syncQueue.pendingCount,
-          sheetTestMessage: '동기화 처리 완료: 대기 ${_syncQueue.pendingCount}건',
+          syncPendingCount: pendingCount,
+          sheetTestMessage: '동기화 처리 완료: 대기 $pendingCount건',
         ),
       );
     } catch (e, st) {
       emit(
         state.copyWith(
           testingSheet: false,
-          syncPendingCount: _syncQueue.pendingCount,
+          syncPendingCount: state.syncPendingCount,
           errorText: '동기화 실패:\n$e\n\n$st',
           sheetTestMessage: '동기화 실패: $e',
         ),
@@ -390,9 +237,10 @@ class SettingsCubit extends Cubit<SettingsState> {
   Future<void> exportSimpleLedger({required int year, int? month}) async {
     emit(state.copyWith(exportingLedger: true, sheetTestMessage: null));
     try {
-      final file = await SimpleLedgerExporter(
-        _hive,
-      ).exportAndShare(year: year, month: month);
+      final file = await _dataService.exportSimpleLedger(
+        year: year,
+        month: month,
+      );
       emit(
         state.copyWith(
           exportingLedger: false,
@@ -414,7 +262,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   Future<void> createBackup() async {
     emit(state.copyWith(backupBusy: true, sheetTestMessage: null));
     try {
-      final file = await BackupService(_hive).createBackup();
+      final file = await _dataService.createBackup();
       emit(
         state.copyWith(
           backupBusy: false,
@@ -439,9 +287,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   }) async {
     emit(state.copyWith(backupBusy: true, sheetTestMessage: null));
     try {
-      final result = await BackupService(
-        _hive,
-      ).restoreFromZip(File(path), mode: mode);
+      final result = await _dataService.restoreBackup(path, mode: mode);
       emit(
         state.copyWith(
           backupBusy: false,
@@ -467,14 +313,14 @@ class SettingsCubit extends Cubit<SettingsState> {
   Future<void> deleteAllData() async {
     emit(state.copyWith(backupBusy: true, sheetTestMessage: null));
     try {
-      await BackupService(_hive).deleteAllData();
+      await _dataService.deleteAllData();
       emit(
         state.copyWith(
           backupBusy: false,
           transactionCount: _hive.transactionCount,
           receiptCount: _hive.receiptCount,
           itemCount: _hive.itemCount,
-          syncPendingCount: _syncQueue.pendingCount,
+          syncPendingCount: _hive.syncItemsBox.length,
           sheetTestMessage: '전체 데이터 삭제 완료',
           errorText: null,
         ),
@@ -489,13 +335,4 @@ class SettingsCubit extends Cubit<SettingsState> {
       );
     }
   }
-
-  String? _extractSheetId(String input) {
-    final trimmed = input.trim();
-    if (trimmed.isEmpty) return null;
-    final match = RegExp(r'/d/([^/]+)').firstMatch(trimmed);
-    return match?.group(1) ?? trimmed;
-  }
-
-  String _short(String id) => id.length <= 10 ? id : '${id.substring(0, 10)}…';
 }

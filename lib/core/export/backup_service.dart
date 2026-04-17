@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/category.dart' as model;
+import '../models/budget.dart';
 import '../models/receipt.dart';
 import '../models/transaction.dart' as ledger;
 import '../models/transaction_item.dart';
@@ -35,12 +36,13 @@ class BackupService {
     final archive = Archive();
     final receipts = _hive.allReceipts();
     final data = {
-      'version': 2,
+      'version': 3,
       'createdAt': DateTime.now().toIso8601String(),
       'receipts': receipts.map(_receiptToJson).toList(),
       'transactions': _hive.allTransactions().map(_transactionToJson).toList(),
       'transaction_items': _hive.allItems().map(_itemToJson).toList(),
       'categories': _hive.categories().map(_categoryToJson).toList(),
+      'budgets': _hive.allBudgets().map(_budgetToJson).toList(),
       'settings': _hive.settingsSnapshot(),
     };
     archive.addFile(
@@ -125,6 +127,9 @@ class BackupService {
     final categories = _readList(
       json['categories'],
     ).map((raw) => _categoryFromJson(raw as Map<String, dynamic>)).toList();
+    final budgets = _readList(
+      json['budgets'],
+    ).map((raw) => _budgetFromJson(raw as Map<String, dynamic>)).toList();
     final existingIds = _hive.allTransactions().map((tx) => tx.id).toSet();
     final skipped = mode == BackupRestoreMode.merge
         ? transactions.where((tx) => existingIds.contains(tx.id)).length
@@ -135,6 +140,7 @@ class BackupService {
       transactions: transactions,
       items: items,
       categories: categories,
+      budgets: budgets,
       settings: Map<String, dynamic>.from(
         json['settings'] as Map? ?? const <String, dynamic>{},
       ),
@@ -250,6 +256,24 @@ class BackupService {
       isDefault: map['isDefault'] as bool? ?? false,
       taxCategory: map['taxCategory'] as String?,
       sortOrder: (map['sortOrder'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> _budgetToJson(Budget budget) => {
+    'id': budget.id,
+    'categoryId': budget.categoryId,
+    'monthlyAmount': budget.monthlyAmount,
+    'year': budget.year,
+    'month': budget.month,
+  };
+
+  Budget _budgetFromJson(Map<String, dynamic> map) {
+    return Budget(
+      id: map['id'].toString(),
+      categoryId: map['categoryId'].toString(),
+      monthlyAmount: (map['monthlyAmount'] as num).toInt(),
+      year: (map['year'] as num).toInt(),
+      month: (map['month'] as num).toInt(),
     );
   }
 

@@ -218,16 +218,6 @@ class HiveStorage {
     return (income: 0, expense: expense);
   }
 
-  /// 디버그/테스트 전용: 박스 전체 비우기.
-  Future<void> debugClearAll() async {
-    await _receipts.clear();
-    await _transactions.clear();
-    await _items.clear();
-    await _syncItems.clear();
-    await _budgets.clear();
-    debugPrint('[Hive] debugClearAll: all boxes emptied');
-  }
-
   /// 사용자 데이터 초기화: 백업/복원 설정 화면의 "전체 삭제"에서 사용.
   Future<void> clearAllLocalData() async {
     await _receipts.clear();
@@ -383,6 +373,8 @@ class HiveStorage {
     ).fold<int>(0, (sum, budget) => sum + budget.monthlyAmount);
   }
 
+  List<Budget> allBudgets() => _budgets.values.toList();
+
   Future<void> upsertBudget(Budget budget) => _budgets.put(budget.id, budget);
 
   Future<void> deleteBudget(String id) => _budgets.delete(id);
@@ -396,6 +388,7 @@ class HiveStorage {
     required List<Transaction> transactions,
     required List<TransactionItem> items,
     required List<model.Category> categories,
+    required List<Budget> budgets,
     required Map<String, dynamic> settings,
     required bool overwrite,
   }) async {
@@ -405,6 +398,7 @@ class HiveStorage {
       await _items.clear();
       await _syncItems.clear();
       await _categories.clear();
+      await _budgets.clear();
       await _settings.clear();
     }
     for (final receipt in receipts) {
@@ -425,6 +419,11 @@ class HiveStorage {
     for (final category in categories) {
       if (overwrite || !_categories.containsKey(category.id)) {
         await _categories.put(category.id, category);
+      }
+    }
+    for (final budget in budgets) {
+      if (overwrite || !_budgets.containsKey(budget.id)) {
+        await _budgets.put(budget.id, budget);
       }
     }
     for (final entry in settings.entries) {

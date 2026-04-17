@@ -58,31 +58,6 @@ class SheetsService {
     );
   }
 
-  Future<void> appendTransaction(
-    String spreadsheetId,
-    ledger.Transaction tx,
-  ) async {
-    await appendBatch(spreadsheetId, [tx]);
-  }
-
-  Future<void> appendBatch(
-    String spreadsheetId,
-    List<ledger.Transaction> txList,
-  ) async {
-    if (txList.isEmpty) return;
-    final appendRange = await _firstSheetRange(
-      spreadsheetId,
-      'A:$sheetEndColumn',
-    );
-    await _api.spreadsheets.values.append(
-      sheets.ValueRange(values: txList.map(_rowFor).toList()),
-      spreadsheetId,
-      appendRange,
-      valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
-    );
-  }
-
   Future<SheetUpsertResult> upsertTransaction(
     String spreadsheetId,
     ledger.Transaction tx, {
@@ -100,15 +75,10 @@ class SheetsService {
       return SheetUpsertResult(rowIndex: rowIndex, mode: SheetWriteMode.update);
     }
     final appendedRow = await appendTransactionRow(spreadsheetId, title, tx);
-    return SheetUpsertResult(rowIndex: appendedRow, mode: SheetWriteMode.append);
-  }
-
-  Future<int?> findRowByTransactionId(
-    String spreadsheetId,
-    String transactionId,
-  ) async {
-    final title = await _firstSheetTitle(spreadsheetId);
-    return _findRowByTransactionId(spreadsheetId, title, transactionId);
+    return SheetUpsertResult(
+      rowIndex: appendedRow,
+      mode: SheetWriteMode.append,
+    );
   }
 
   Future<void> updateTransactionRow(
@@ -134,10 +104,7 @@ class SheetsService {
     String sheetTitle,
     ledger.Transaction tx,
   ) async {
-    final appendRange = rangeForSheetTitle(
-      sheetTitle,
-      'A:$sheetEndColumn',
-    );
+    final appendRange = rangeForSheetTitle(sheetTitle, 'A:$sheetEndColumn');
     final response = await _api.spreadsheets.values.append(
       sheets.ValueRange(values: [_rowFor(tx)]),
       spreadsheetId,
@@ -146,37 +113,13 @@ class SheetsService {
       insertDataOption: 'INSERT_ROWS',
     );
     final updatedRange = response.updates?.updatedRange;
-    final rowIndex = updatedRange == null ? null : rowIndexFromRange(updatedRange);
+    final rowIndex = updatedRange == null
+        ? null
+        : rowIndexFromRange(updatedRange);
     if (rowIndex == null) {
       throw StateError('시트 append 결과에서 행 번호를 읽을 수 없습니다.');
     }
     return rowIndex;
-  }
-
-  Future<bool> markTransactionDeleted(
-    String spreadsheetId,
-    ledger.Transaction tx, {
-    int? preferredRowIndex,
-  }) async {
-    final title = await _firstSheetTitle(spreadsheetId);
-    final rowIndex = await _resolveRowIndex(
-      spreadsheetId,
-      title,
-      tx.id,
-      preferredRowIndex,
-    );
-    if (rowIndex == null) return false;
-    final range = rangeForSheetTitle(
-      title,
-      'A$rowIndex:$sheetEndColumn$rowIndex',
-    );
-    await _api.spreadsheets.values.update(
-      sheets.ValueRange(values: [_rowFor(tx, status: deletedStatus)]),
-      spreadsheetId,
-      range,
-      valueInputOption: 'USER_ENTERED',
-    );
-    return true;
   }
 
   Future<bool> markTransactionDeletedById(
@@ -209,7 +152,10 @@ class SheetsService {
       title,
       'A$rowIndex:$sheetEndColumn$rowIndex',
     );
-    final existingRow = await _api.spreadsheets.values.get(spreadsheetId, range);
+    final existingRow = await _api.spreadsheets.values.get(
+      spreadsheetId,
+      range,
+    );
     final values = [
       for (final cell in existingRow.values?.firstOrNull ?? const <Object?>[])
         cell?.toString() ?? '',
@@ -346,10 +292,7 @@ class SheetsService {
     return int.tryParse(match.group(1)!);
   }
 
-  List<Object?> _rowFor(
-    ledger.Transaction tx, {
-    String status = normalStatus,
-  }) {
+  List<Object?> _rowFor(ledger.Transaction tx, {String status = normalStatus}) {
     final tax = tx.tax ?? 0;
     final supply = tx.total - tax;
     return [
