@@ -60,7 +60,7 @@ jobs:
         with:
           name: easy-ledger-windows
           path: |
-            windows/build/windows/installer/*.exe
+            build/windows/installer/*.exe
             build/windows/*.zip
 
       - name: Upload release assets
@@ -68,5 +68,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            windows/build/windows/installer/*.exe
+            build/windows/installer/*.exe
             build/windows/*.zip
