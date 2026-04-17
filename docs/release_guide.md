@@ -86,10 +86,23 @@ git push origin v0.4.0
 2. 원하는 워크플로우 선택
 3. `Run workflow` 클릭
 
-artifact 다운로드:
-1. 실행 완료 후 해당 workflow run 열기
-2. 하단 `Artifacts` 섹션에서 macOS / Android / Windows 결과 다운로드
-3. macOS artifact에는 `쉬운장부.app` 압축본이 포함됨
+Release 자동 업로드:
+1. `v*` 태그가 push되면 macOS / Android / Windows 워크플로우가 자동 실행됩니다.
+2. 각 워크플로우는 빌드 산출물을 GitHub Release에 자동 첨부합니다.
+3. 최종 사용자는 `Actions`가 아니라 `Releases` 페이지에서 바로 다운로드하면 됩니다.
+
+직접 공유할 링크 예시:
+
+```text
+https://github.com/noma-openproject/easy_ledger/releases
+```
+
+대표 자산 이름:
+- Windows 설치 파일: `easy-ledger-windows-setup-v0.4.1.exe`
+- Windows 압축본: `easy-ledger-windows-portable-v0.4.1.zip`
+- Android APK: `easy-ledger-android-v0.4.1.apk`
+- Android fallback APK: `easy-ledger-android-v0.4.1-debug.apk`
+- macOS 압축본: `easy-ledger-macos-v0.4.1.zip`
 
 ### Android 서명용 GitHub Secrets
 
@@ -108,15 +121,27 @@ base64 -i android/app/upload-keystore.jks | pbcopy
 
 ## 3. GitHub Release 업로드
 
-1. GitHub의 `Releases` 페이지 이동
-2. `Draft a new release` 클릭
-3. 태그 선택 또는 새 태그 입력
-4. 빌드된 `.app`, `.apk`, Windows artifact 압축본 업로드
-5. 릴리스 노트 작성 후 게시
+태그 푸시 후 워크플로우가 자동으로 Release 자산을 올립니다.
+
+Windows 사용자 배포:
+1. `Releases` 페이지에서 `easy-ledger-windows-setup-vX.Y.Z.exe` 다운로드
+2. 실행 후 설치
+3. 설치 완료 후 시작 메뉴 또는 바탕화면 아이콘으로 실행
+
+Android 사용자 배포:
+1. `Releases` 페이지에서 APK 다운로드
+2. 휴대폰에서 `알 수 없는 앱 설치 허용`
+3. APK 열기 → 설치
+
+참고:
+- Android signing secrets가 설정돼 있으면 release APK가 올라갑니다.
+- signing secrets가 없으면 debug APK가 대신 올라갑니다.
+- iPhone은 GitHub Release 자산만으로 직접 설치할 수 없고, TestFlight 또는 App Store 배포가 필요합니다.
 
 ## 4. 확인 체크리스트
 
 - macOS: `flutter build macos --release` 성공 확인 후 `쉬운장부.app` 복사본 실행 확인
 - Android: 디버그 APK 설치 및 실행 확인
 - Android 릴리스: 키스토어 적용 후 서명 빌드 확인
-- Windows: GitHub Actions artifact 다운로드 후 실행 확인
+- Windows: Release 페이지의 설치용 `.exe` 다운로드 후 설치/실행 확인
+- Android: Release 페이지 APK 다운로드 후 설치 확인

@@ -8,7 +8,7 @@ name: Build Android
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -33,7 +33,26 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Detect signing secrets
+        id: signing
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ] && \
+             [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && \
+             [ -n "$ANDROID_KEY_ALIAS" ] && \
+             [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            echo "has_signing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_signing=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Decode keystore
+        if: steps.signing.outputs.has_signing == 'true'
         shell: bash
         run: |
           printf "%s" "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" \
@@ -41,6 +60,7 @@ jobs:
             > android/app/upload-keystore.jks
 
       - name: Write key.properties
+        if: steps.signing.outputs.has_signing == 'true'
         shell: bash
         run: |
           cat <<'EOF' > android/key.properties
@@ -51,10 +71,33 @@ jobs:
           EOF
 
       - name: Build Android release
+        if: steps.signing.outputs.has_signing == 'true'
         run: flutter build apk --release
+
+      - name: Build Android debug fallback
+        if: steps.signing.outputs.has_signing != 'true'
+        run: flutter build apk --debug
+
+      - name: Rename APK for release page
+        shell: bash
+        run: |
+          apk_dir="build/app/outputs/flutter-apk"
+          if [ "${{ steps.signing.outputs.has_signing }}" = "true" ]; then
+            cp "$apk_dir/app-release.apk" \
+              "$apk_dir/easy-ledger-android-${{ github.ref_name }}.apk"
+          else
+            cp "$apk_dir/app-debug.apk" \
+              "$apk_dir/easy-ledger-android-${{ github.ref_name }}-debug.apk"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: easy-ledger-android
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/*.apk
+
+      - name: Upload release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/*.apk
